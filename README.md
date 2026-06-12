@@ -233,8 +233,7 @@ Generation 5  →  Unified self-contained engine (all tiers, single file,
 
 For commercial licensing, partnerships, or data collaboration:
 
-**Bartosz** — BANEBET PRO  
-📧 projectbanebet.proanalyst@gmail.com  
-🌐 [banebet.pro](https://banebet.pro)  
+**Bartosz** — BANEBET.PRO ANALYST
+📧 projectbanebet.proanalyst@gmail.com 
 🐙 [github.com/Jokovexor](https://github.com/Jokovexor)
 
