@@ -228,3 +228,13 @@ Generation 5  →  Unified self-contained engine (all tiers, single file,
 
 *BANEBET PRO is a proprietary system. This document describes the public architectural evolution. Internal mathematical frameworks, signal classification logic, decision constants, and calibration parameters are not disclosed.*
 
+
+## Contact
+
+For commercial licensing, partnerships, or data collaboration:
+
+**Bartosz** — BANEBET PRO  
+📧 projectbanebet.proanalyst@gmail.com  
+🌐 [banebet.pro](https://banebet.pro)  
+🐙 [github.com/Jokovexor](https://github.com/Jokovexor)
+
