@@ -680,10 +680,7 @@ SPORT_CONFIGS: Dict[str, SportConfig] = {
 # =============================================================================
 
 class SportMEBN:
-    """
-    Multi-Entity Bayesian Network — generyczny szablon dla dowolnego sportu.
-    Funkcja probability_function() jest 'czarną skrzynką' wywoływaną przez XFAC.
-    """
+   
 
     def __init__(self, config: SportConfig, tree_weights: Optional[Tuple[float, float]] = None):
         self.config = config
@@ -749,7 +746,7 @@ class TreeLayer:
     Wagi ensemble obliczane na podstawie OOF MAE (odwrotność błędu).
     """
 
-    # Wagi domyślne (gdy nie ma walidacji OOF)
+   
     _DEFAULT_WEIGHTS = {
         "xgb": 0.30,
         "ktb": 0.20,
@@ -904,7 +901,7 @@ class TreeLayer:
                         data=X_v, gp_coords_pred=X_v,
                         predict_var=False,
                     )
-                    # predict może zwrócić dict lub array
+                    
                     if isinstance(gpb_pred, dict):
                         gpb_pred = gpb_pred.get("response_mean", list(gpb_pred.values())[0])
                     oof["gpb"][val_idx] = np.clip(gpb_pred, 0, 1)
@@ -912,36 +909,8 @@ class TreeLayer:
                     warnings.warn(f"[GPBoost fold {fold}] {e}")
                     active["gpb"] = False
 
-        # ---- Obliczenie wag OOF (odwrotność MAE) ----
-        weights: Dict[str, float] = {}
-        for key, pred in oof.items():
-            if not active[key]:
-                weights[key] = 0.0
-                continue
-            mae = float(np.mean(np.abs(pred - y))) + 1e-6
-            weights[key] = 1.0 / mae
 
-        # RF trenowany na residuach XGB — jego wagę liczymy z MAE residuów OOF
-        oof_residuals = y - oof["xgb"]  # residua XGB na OOF
-        mae_rf_residual = float(np.mean(np.abs(oof_residuals))) + 1e-6
-        weights["rf"] = 1.0 / mae_rf_residual
-
-        # Normalizacja
-        total_w = sum(weights.values()) + 1e-9
-        self._ensemble_weights = {k: v / total_w for k, v in weights.items()}
-        print(f"[ENSEMBLE] Wagi OOF: " +
-              " | ".join(f"{k}={v:.3f}" for k, v in self._ensemble_weights.items()))
-
-        # ---- Trening finalny na całym zbiorze ----
-        self.xgb_model.fit(X, y)
-
-        if active["ktb"]:
-            try:
-                self.ktb_model.fit(X, y)
-            except Exception as e:
-                warnings.warn(f"[KTBoost final] {e}")
-                self._ensemble_weights["ktb"] = 0.0
-
+        
         if active["ngb"]:
             try:
                 self.ngb_model.fit(X, y)
@@ -964,12 +933,12 @@ class TreeLayer:
                 warnings.warn(f"[GPBoost final] {e}")
                 self._ensemble_weights["gpb"] = 0.0
 
-        # RF na residuach XGB
+       
         xgb_preds_train = np.clip(self.xgb_model.predict(X), 0, 1)
         residuals = y - xgb_preds_train
         self.rf_model.fit(X, residuals)
 
-        # Feature importances → do MEBN
+       
         self._xgb_importance = float(self.xgb_model.feature_importances_.mean())
         self._rf_importance   = float(self.rf_model.feature_importances_.mean())
 
@@ -984,12 +953,12 @@ class TreeLayer:
         """Ważona predykcja ensemble wszystkich modeli."""
         assert self.trained, "Wywołaj train() przed predict()."
 
-        # Baza: XGBoost + korekcja RF residuów (jak w karasu2 — RF liczony raz)
+        
         xgb_pred = np.clip(self.xgb_model.predict(X), 0, 1)
         res_pred = self.rf_model.predict(X)
         base_pred = np.clip(xgb_pred + res_pred * self._ensemble_weights["rf"], 0, 1)
 
-        # Modele dodatkowe (KTB/NGB/GPB) — ważona suma z base_pred
+        
         extra_preds: Dict[str, np.ndarray] = {}
 
         if KTB_AVAILABLE and self.ktb_model is not None and self._ensemble_weights.get("ktb", 0) > 0:
@@ -1017,7 +986,7 @@ class TreeLayer:
             # Brak modeli dodatkowych — identycznie jak karasu2
             return base_pred
 
-        # Ważona kombinacja base (xgb+rf) z modelami dodatkowymi
+        
         w_base = self._ensemble_weights.get("xgb", 0.5)
         result = base_pred * w_base
         total_w = w_base
@@ -1037,11 +1006,7 @@ class TreeLayer:
     # ------------------------------------------------------------------
 
     def predict_uncertainty(self, X: np.ndarray) -> Optional[np.ndarray]:
-        """
-        Zwraca odchylenie standardowe predykcji (z NGBoost).
-        None jeśli NGBoost niedostępny.
-        Użyj do oceny pewności zakładu.
-        """
+        
         if not (NGB_AVAILABLE and self.ngb_model is not None and self.trained):
             return None
         try:
@@ -1082,16 +1047,7 @@ class TreeLayer:
 # =============================================================================
 
 class AdaptiveLearner:
-    """
-    Mechanizm adaptacyjnego uczenia się na MAŁEJ liczbie meczów (10-30).
-    NIE ZMIENIA architektury 8 wymiarów – tylko DOSTRAJA wagi MEBN.
-    
-    Zasada działania:
-    1. Zaczyna od wag eksperckich (z SportConfig)
-    2. Każdy nowy mecz to jeden epizod uczenia
-    3. Bayesian update: nowa_waga = (stara_waga * alpha + error * beta) / (alpha + beta)
-    4. Im więcej meczów, tym większe zaufanie do korekty
-    """
+   
     
     def __init__(self, engine: 'UniversalBettingEngine', learning_rate: float = 0.05):
         self.engine = engine
@@ -1126,40 +1082,32 @@ class AdaptiveLearner:
         Returns:
             słownik z informacją o korekcie
         """
-        # Predykcja przed korektą
-        predicted = self.engine.predict(params)["p_win"]
-        error = actual_result - predicted
+       
+        
         
         self.match_history.append((params.copy(), actual_result))
         self.prediction_errors.append(abs(error))
         
-        # Bayesian update – aktualizacja zaufania do nowych danych
-        self.bayesian_beta += 1.0
         
-        # Obliczenie korekty dla każdego wymiaru
+        
+        
+        
         corrections = {}
         for i, dim in enumerate(self.engine.config.dimensions):
-            # Wpływ parametru na błąd (im wyższy parametr, tym większa korekta jeśli błąd duży)
-            param_value = params[i]
             
-            # Bayesian weight – im więcej danych, tym większe zaufanie do korekty
+            
+            
             bayesian_weight = self.bayesian_beta / (self.bayesian_alpha + self.bayesian_beta)
+          
             
-            # Korekta = error * param_value * learning_rate * bayesian_weight
-            correction = error * param_value * self.learning_rate * bayesian_weight
-            
-            # Ograniczenie korekty do rozsądnych wartości
             correction = np.clip(correction, -0.05, 0.05)
             
-            self.weight_corrections[dim] += correction
-            corrections[dim] = correction
+            
         
-        # Aktualizacja wag w MEBN
+     
         self._apply_corrections()
         
-        # Obliczenie nowej predykcji po korekcie
-        new_predicted = self.engine.predict(params)["p_win"]
-        
+    
         return {
             "dimension_corrections": corrections,
             "old_prediction": round(predicted, 4),
@@ -1171,29 +1119,29 @@ class AdaptiveLearner:
         }
     
     def _apply_corrections(self):
-        """Aplikuje skorygowane wagi do MEBN."""
+      
         n = len(self.engine.config.dimensions)
         original_weights = np.array(self.engine.config.weights[:n])
         
-        # Zastosowanie korekt
+        
         corrected_weights = original_weights.copy()
         for i, dim in enumerate(self.engine.config.dimensions):
             correction = self.weight_corrections[dim]
             corrected_weights[i] = original_weights[i] * (1.0 + correction)
         
-        # Normalizacja (suma = 1)
+        
         corrected_weights = np.maximum(corrected_weights, 0.01)  # żadna waga nie może być ujemna
         corrected_weights /= corrected_weights.sum()
         
-        # Aktualizacja wag w MEBN
+        
         if self.engine.mebn is not None:
             self.engine.mebn.w = corrected_weights
             
-        # Zapamiętanie skorygowanych wag
+        
         self.engine._corrected_weights = corrected_weights.tolist()
     
     def get_current_weights(self) -> Dict[str, float]:
-        """Zwraca aktualne wagi (eksperckie + korekty)."""
+        
         if self.engine.mebn is None:
             return {}
         
