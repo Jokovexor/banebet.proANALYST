@@ -515,6 +515,11 @@ class TreeLayer:
         mae_rf_residual = float(np.mean(np.abs(oof_residuals))) + 1e-6
         weights["rf"] = 1.0 / mae_rf_residual
 
+        # Normalizacja
+        total_w = sum(weights.values()) + 1e-9
+        self._ensemble_weights = {k: v / total_w for k, v in weights.items()}
+        print(f"[ENSEMBLE] Wagi OOF: " +
+              " | ".join(f"{k}={v:.3f}" for k, v in self._ensemble_weights.items()))
 
         # ---- Trening finalny na całym zbiorze ----
         self.xgb_model.fit(X, y)
@@ -601,6 +606,39 @@ class TreeLayer:
             # Brak modeli dodatkowych — identycznie jak karasu2
             return base_pred
 
+        # Ważona kombinacja base (xgb+rf) z modelami dodatkowymi
+        w_base = self._ensemble_weights.get("xgb", 0.5)
+        result = base_pred * w_base
+        total_w = w_base
+        for key, pred in extra_preds.items():
+            w = self._ensemble_weights.get(key, 0.0)
+            if w > 0:
+                result += pred * w
+                total_w += w
+
+        if total_w > 0:
+            result /= total_w
+
+        return np.clip(result, 0.0, 1.0)
+
+    # ------------------------------------------------------------------
+    # NGBoost — dodatkowe API: rozkład niepewności
+    # ------------------------------------------------------------------
+
+    def predict_uncertainty(self, X: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Zwraca odchylenie standardowe predykcji (z NGBoost).
+        None jeśli NGBoost niedostępny.
+        Użyj do oceny pewności zakładu.
+        """
+        if not (NGB_AVAILABLE and self.ngb_model is not None and self.trained):
+            return None
+        try:
+            dist = self.ngb_model.pred_dist(X)
+            return np.array(dist.scale)  # std z rozkładu Normal
+        except Exception:
+            return None
+
     # ------------------------------------------------------------------
     # WŁAŚCIWOŚCI
     # ------------------------------------------------------------------
@@ -628,6 +666,177 @@ class TreeLayer:
         return models
 
 
+# =============================================================================
+# ADAPTACYJNY UCZEŃ — Bayesian Online Learning dla MAŁEJ liczby meczów
+# =============================================================================
+
+class AdaptiveLearner:
+    """
+    Mechanizm adaptacyjnego uczenia się na MAŁEJ liczbie meczów (10-30).
+    NIE ZMIENIA architektury 8 wymiarów – tylko DOSTRAJA wagi MEBN.
+    
+    Zasada działania:
+    1. Zaczyna od wag eksperckich (z SportConfig)
+    2. Każdy nowy mecz to jeden epizod uczenia
+    3. Bayesian update: nowa_waga = (stara_waga * alpha + error * beta) / (alpha + beta)
+    4. Im więcej meczów, tym większe zaufanie do korekty
+    """
+    
+    def __init__(self, engine: 'UniversalBettingEngine', learning_rate: float = 0.05):
+        self.engine = engine
+        self.learning_rate = learning_rate
+        
+        # Pamięć meczów (parametry + rzeczywisty wynik)
+        self.match_history: List[Tuple[np.ndarray, float]] = []
+        
+        # Adaptacyjne korekty wag dla każdego wymiaru (start = brak korekty)
+        self.weight_corrections: Dict[str, float] = {
+            dim: 0.0 for dim in engine.config.dimensions
+        }
+        
+        # Bayesian prior – im większy, tym wolniej model się uczy (bardziej ufa ekspertowi)
+        self.bayesian_alpha: float = 20.0  # zaufanie do eksperta
+        self.bayesian_beta: float = 1.0    # zaufanie do nowych danych (rośnie z każdym meczem)
+        
+        # Śledzenie błędów
+        self.prediction_errors: List[float] = []
+        
+        print(f"[ADAPTIVE] Inicjalizacja adaptacyjnego uczenia dla {engine.config.name}")
+        print(f"[ADAPTIVE] learning_rate={learning_rate}, bayesian_alpha={self.bayesian_alpha}")
+    
+    def record_match(self, params: np.ndarray, actual_result: float) -> Dict:
+        """
+        Zapisuje wynik meczu i aktualizuje wagi.
+        
+        Args:
+            params: parametry meczu (8 wymiarów, wartości 0-1)
+            actual_result: rzeczywisty wynik (0 = przegrana, 1 = wygrana)
+        
+        Returns:
+            słownik z informacją o korekcie
+        """
+        # Predykcja przed korektą
+        predicted = self.engine.predict(params)["p_win"]
+        error = actual_result - predicted
+        
+        self.match_history.append((params.copy(), actual_result))
+        self.prediction_errors.append(abs(error))
+        
+        # Bayesian update – aktualizacja zaufania do nowych danych
+        self.bayesian_beta += 1.0
+        
+        # Obliczenie korekty dla każdego wymiaru
+        corrections = {}
+        for i, dim in enumerate(self.engine.config.dimensions):
+            # Wpływ parametru na błąd (im wyższy parametr, tym większa korekta jeśli błąd duży)
+            param_value = params[i]
+            
+            # Bayesian weight – im więcej danych, tym większe zaufanie do korekty
+            bayesian_weight = self.bayesian_beta / (self.bayesian_alpha + self.bayesian_beta)
+            
+            # Korekta = error * param_value * learning_rate * bayesian_weight
+            correction = error * param_value * self.learning_rate * bayesian_weight
+            
+            # Ograniczenie korekty do rozsądnych wartości
+            correction = np.clip(correction, -0.05, 0.05)
+            
+            self.weight_corrections[dim] += correction
+            corrections[dim] = correction
+        
+        # Aktualizacja wag w MEBN
+        self._apply_corrections()
+        
+        # Obliczenie nowej predykcji po korekcie
+        new_predicted = self.engine.predict(params)["p_win"]
+        
+        return {
+            "dimension_corrections": corrections,
+            "old_prediction": round(predicted, 4),
+            "actual_result": actual_result,
+            "error": round(error, 4),
+            "new_prediction": round(new_predicted, 4),
+            "matches_learned": len(self.match_history),
+            "avg_error": round(np.mean(self.prediction_errors[-10:]), 4) if self.prediction_errors else 0,
+        }
+    
+    def _apply_corrections(self):
+        """Aplikuje skorygowane wagi do MEBN."""
+        n = len(self.engine.config.dimensions)
+        original_weights = np.array(self.engine.config.weights[:n])
+        
+        # Zastosowanie korekt
+        corrected_weights = original_weights.copy()
+        for i, dim in enumerate(self.engine.config.dimensions):
+            correction = self.weight_corrections[dim]
+            corrected_weights[i] = original_weights[i] * (1.0 + correction)
+        
+        # Normalizacja (suma = 1)
+        corrected_weights = np.maximum(corrected_weights, 0.01)  # żadna waga nie może być ujemna
+        corrected_weights /= corrected_weights.sum()
+        
+        # Aktualizacja wag w MEBN
+        if self.engine.mebn is not None:
+            self.engine.mebn.w = corrected_weights
+            
+        # Zapamiętanie skorygowanych wag
+        self.engine._corrected_weights = corrected_weights.tolist()
+    
+    def get_current_weights(self) -> Dict[str, float]:
+        """Zwraca aktualne wagi (eksperckie + korekty)."""
+        if self.engine.mebn is None:
+            return {}
+        
+        result = {}
+        for i, dim in enumerate(self.engine.config.dimensions):
+            original = self.engine.config.weights[i]
+            correction = self.weight_corrections[dim]
+            result[dim] = {
+                "original": original,
+                "correction": round(correction, 4),
+                "current": round(self.engine.mebn.w[i], 4),
+            }
+        return result
+    
+    def save_memory(self, filepath: str):
+        """Zapisuje historię meczów do pliku JSON."""
+        data = {
+            "sport": self.engine.sport,
+            "match_history": [
+                {
+                    "params": params.tolist(),
+                    "actual_result": result,
+                }
+                for params, result in self.match_history
+            ],
+            "weight_corrections": self.weight_corrections,
+            "bayesian_alpha": self.bayesian_alpha,
+            "bayesian_beta": self.bayesian_beta,
+            "prediction_errors": self.prediction_errors,
+        }
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"[ADAPTIVE] Zapisano historię do {filepath}")
+    
+    def load_memory(self, filepath: str):
+        """Wczytuje historię meczów z pliku JSON."""
+        if not os.path.exists(filepath):
+            print(f"[ADAPTIVE] Brak pliku {filepath}")
+            return
+        
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        
+        self.match_history = [
+            (np.array(m["params"]), m["actual_result"])
+            for m in data["match_history"]
+        ]
+        self.weight_corrections = data["weight_corrections"]
+        self.bayesian_alpha = data["bayesian_alpha"]
+        self.bayesian_beta = data["bayesian_beta"]
+        self.prediction_errors = data["prediction_errors"]
+        
+        self._apply_corrections()
+        print(f"[ADAPTIVE] Wczytano {len(self.match_history)} meczów z {filepath}")
 
 
 # =============================================================================
@@ -686,10 +895,39 @@ class UniversalBettingEngine:
         # NOWOŚĆ: inicjalizacja adaptacyjnego ucznia
         self.adaptive = AdaptiveLearner(self)
 
-   
+    # ------------------------------------------------------------------
+    # 2. KOMPILACJA DO TENSOR TRAIN (XFAC)
+    # ------------------------------------------------------------------
+
+    def compile(self, n_points: int = 15, eps: float = 1e-4) -> None:
+        """
+        Buduje aproksymację Tensor Train za pomocą xfacpy.
+        Po compile() predykcja jest ~1000x szybsza niż bezpośrednie MEBN.
+        """
+        if self.mebn is None:
+            raise RuntimeError("Wywołaj train() przed compile().")
+
+        n = len(self.config.dimensions)
+        low  = np.zeros(n)
+        high = np.ones(n)
+
+        if XFAC_AVAILABLE:
+            print(f"[COMPILE] Budowanie Tensor Train (n_points={n_points}, eps={eps})...")
+            self.tt_model = xfacpy.cross(
+                self.mebn.probability_function,
+                low,
+                high,
+                n_points=n_points,
+                eps=eps,
+            )
+            self._is_compiled = True
+            print("[COMPILE] Tensor Train gotowy. Predykcja live: O(r²d) zamiast O(n^d).")
+        else:
+            print("[COMPILE] xfacpy niedostępne — predykcja będzie używać MEBN bezpośrednio.")
+            self._is_compiled = False
 
     # ------------------------------------------------------------------
-    # 2. PREDYKCJA
+    # 3. PREDYKCJA
     # ------------------------------------------------------------------
 
     def predict(self, match_params: np.ndarray) -> Dict:
@@ -774,7 +1012,7 @@ class UniversalBettingEngine:
         return info
 
     # ------------------------------------------------------------------
-    # 3. OBLICZANIE RYNKÓW BUKMACHERSKICH
+    # 4. OBLICZANIE RYNKÓW BUKMACHERSKICH
     # ------------------------------------------------------------------
 
     def _calculate_markets(self, p_win: float, params: np.ndarray) -> Dict:
@@ -922,7 +1160,50 @@ class UniversalBettingEngine:
             return 0.0
         return round(float(np.clip(kelly_full / kelly_divisor, 0.0, 0.25)), 4)
 
+    # ------------------------------------------------------------------
+    # 5. NOWOŚĆ: ADAPTACYJNE UCZENIE DLA MAŁEJ LICZBY MECZÓW
+    # ------------------------------------------------------------------
     
+    def record_match_result(self, params: np.ndarray, actual_result: float) -> Dict:
+        """
+        Zapisuje wynik meczu i adaptacyjnie uczy się na nim.
+        
+        Args:
+            params: parametry meczu (8 wymiarów)
+            actual_result: 1 = wygrana faworyta, 0 = przegrana faworyta
+        
+        Returns:
+            słownik z informacją o korekcie wag
+        """
+        if self.adaptive is None:
+            raise RuntimeError("Wywołaj train() przed record_match_result().")
+        
+        return self.adaptive.record_match(params, actual_result)
+    
+    def get_adaptive_weights(self) -> Dict[str, float]:
+        """Zwraca aktualne wagi po adaptacyjnym uczeniu."""
+        if self.adaptive is None:
+            return {}
+        return self.adaptive.get_current_weights()
+    
+    def save_adaptive_memory(self, filepath: str = None):
+        """Zapisuje historię adaptacyjnego uczenia do pliku."""
+        if self.adaptive is None:
+            print("[ADAPTIVE] Brak aktywnego ucznia.")
+            return
+        if filepath is None:
+            filepath = f"adaptive_memory_{self.sport}.json"
+        self.adaptive.save_memory(filepath)
+    
+    def load_adaptive_memory(self, filepath: str = None):
+        """Wczytuje historię adaptacyjnego uczenia z pliku."""
+        if self.adaptive is None:
+            print("[ADAPTIVE] Brak aktywnego ucznia.")
+            return
+        if filepath is None:
+            filepath = f"adaptive_memory_{self.sport}.json"
+        self.adaptive.load_memory(filepath)
+
     # ------------------------------------------------------------------
     # INFO
     # ------------------------------------------------------------------
@@ -1069,7 +1350,10 @@ def demo_single(sport: str = "football"):
     print("\n  ENSEMBLE INFO:")
     print(json.dumps(engine.ensemble_info(), ensure_ascii=False, indent=4))
     
-    
+    # ===== DEMO ADAPTACYJNEGO UCZENIA =====
+    print("\n" + "="*60)
+    print("  DEMO ADAPTACYJNEGO UCZENIA (na 10 meczach)")
+    print("="*60)
     
     # Symulacja 10 meczów z korektą
     for i in range(10):
@@ -1087,7 +1371,10 @@ def demo_single(sport: str = "football"):
         print(f"    Nowa predykcja: {correction_info['new_prediction']:.3f}")
         print(f"    Korekty wag: { {k: round(v,4) for k,v in list(correction_info['dimension_corrections'].items())[:3]} }...")
     
-    
+    print("\n  AKTUALNE WAGI PO ADAPTACJI:")
+    for dim, data in engine.get_adaptive_weights().items():
+        print(f"    {dim:<20}: oryginal={data['original']:.3f} → obecna={data['current']:.3f} (korekta={data['correction']:+.3f})")
+
 
 # =============================================================================
 # ENTRY POINT
