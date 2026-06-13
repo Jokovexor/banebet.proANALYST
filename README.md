@@ -1,7 +1,12 @@
 # banebet.proANALYST
 Proprietary sports betting prediction engine — architecture evolution from v1.0 to Hybrid v2.0. BUSL-1.1 licensed.
 
+# banebet.proANALYST
+
+Proprietary sports betting prediction engine — architecture evolution from v1.0 to Atomic Hybrid v4.0. BUSL-1.1 licensed.
+
 # BANEBET PRO — Architecture Evolution
+
 ### From a Single-Model Baseline to a Full Hybrid Intelligence Stack
 
 > **Note on backtest context:** Results shown below were produced on a limited subset (~5,000 matches, 3 seasons, single-digit league count). The system is designed for 10+ seasons and 30+ leagues minimum. Numbers will improve substantially at full data scale and after proper calibration. They are shown here purely to illustrate directional progress across generations, not as production benchmarks.
@@ -15,6 +20,7 @@ Proprietary sports betting prediction engine — architecture evolution from v1.
 The first generation established the core architectural principle of the entire project: a single engine capable of serving multiple sports and multiple betting markets simultaneously, rather than building isolated sport-specific models.
 
 **Architecture highlights:**
+
 - 7-model ensemble as the prediction backbone
 - Separate `SportConfig` objects defining dimensions and weights per sport, covering football, basketball, hockey, tennis, volleyball, baseball, American football, rugby, cycling, boxing/MMA, snooker, darts, esports, motorsport, and cricket
 - Tensor Train decomposition layer (XFAC) for high-dimensional parameter space approximation
@@ -56,26 +62,31 @@ This generation represents the most significant structural expansion. The ensemb
 **New in v3.0:**
 
 **TIER 1 — Expanded Ensemble + Calibration**
+
 - LightGBM and CatBoost added to the base ensemble (7 → 9 models)
 - Isotonic Regression calibration and Platt scaling applied post-ensemble
 - `ProbabilityCalibrator` class wrapping both methods with automatic selection
 
 **TIER 2 — Meta-Learner Stacking**
+
 - Out-of-fold predictions from all 9 base models become features for a Ridge regression meta-learner
 - Replaces the hand-weighted MAE averaging used in previous generations
 - 5-fold cross-validation stacking protocol
 
 **TIER 3 — Automated Hyperparameter Optimization + Explainability**
+
 - Optuna integration for automated HPO (XGBoost and LightGBM tuning)
 - SHAP integration: every prediction carries a `why_bet` field listing the top features driving the decision
 - Falls back to built-in feature importances when SHAP is unavailable
 
 **TIER 4 — Dynamic Elo + Monte Carlo Correct Score**
+
 - Dynamic Elo ratings (K=32) replace static team power as a live feature input
 - Elo updates after each recorded match result
 - Monte Carlo simulation for Correct Score market probability distribution
 
 **TIER 5 — Dixon-Coles Goal Model Fusion**
+
 - Dixon-Coles bivariate Poisson model integrated for Over/Under and Correct Score markets
 - Low-score correction (Dixon-Coles rho parameter) for 0-0 and 1-0 results
 - Expected goals (μ_home, μ_away) computed separately and fused with ensemble output
@@ -93,6 +104,7 @@ This generation introduced a deliberate architectural separation: the base engin
 **TIER 6 — Hybrid Intelligence Modules:**
 
 **6.1 — Market-Based Calibration (MBC)**
+
 - Ingests raw odds from N bookmakers simultaneously
 - Removes the bookmaker margin (overround) using multiplicative or additive (Shin) methods
 - Computes a consensus implied probability as weighted median across bookmakers
@@ -101,6 +113,7 @@ This generation introduced a deliberate architectural separation: the base engin
 - Output includes Kelly-adjusted stake sizing for detected value situations
 
 **6.2 — Temporal Attention Mechanism**
+
 - Stores a rolling match history per team (configurable window length)
 - PyTorch LSTM with self-attention when available; falls back to exponentially-weighted numpy GRU
 - The attention mechanism learns which past matches are most informative for current form
@@ -108,39 +121,46 @@ This generation introduced a deliberate architectural separation: the base engin
 - Head-to-head momentum computed as a differential form signal
 
 **6.3 — Injury and Suspension Impact Model**
+
 - Bayesian update of win probability based on confirmed player absences
 - Position-specific impact coefficients (forward > midfielder > defender > goalkeeper)
 - Stacking decay: each additional absence contributes diminishing marginal impact
 - Bayesian prior sharpens or softens based on historical prediction accuracy
 
 **6.4 — Weather and Pitch Module**
+
 - Rain, snow, heat, wind, and pitch type (natural / artificial / hybrid) as modifiers
 - Affects goals multiplier, draw probability, BTTS probability, and home advantage delta
 - Indoor flag disables weather effects (futsal / arena sports)
 - Altitude adjustment (relevant for South American competitions)
 
 **6.5 — Pseudo-Labeling Semi-Supervised Layer**
+
 - Generates soft labels for unlabeled matches (matches without settled results)
 - High-confidence predictions (configurable threshold) are added to the training set
 - Enables the model to learn from in-progress seasons without waiting for full settlement
 
 **6.6 — Contrastive Team Embeddings**
+
 - Triplet loss (anchor / positive / negative) over team feature vectors
 - Learns a style-similarity space: teams playing similar football cluster together
 - Enables transfer learning between leagues with similar playing styles
 - PCA projection for visualization and fast similarity lookup
 
 **6.7 — Dynamic Threshold Tuner**
+
 - The BET / NO_BET decision threshold is no longer fixed
 - Adapts per league, match type (regular / derby / relegation / cup), and day of week
 - Historical decision outcomes update thresholds via Bayesian posterior updates
 
 **6.8 — GPU Acceleration and Batch Inference**
+
 - Batch inference mode for processing multiple matches simultaneously
 - GPU configuration layer for XGBoost and LightGBM tree construction
 - Relevant for production API serving under concurrent load
 
 **6.9 — Multi-Loss Optimization**
+
 - Pseudo-Huber loss replaces MAE/MSE for robustness to outliers
 - Ranking loss penalizes incorrect ordering of win probabilities
 - Calibration loss (Expected Calibration Error) as an auxiliary training objective
@@ -155,6 +175,7 @@ This generation introduced a deliberate architectural separation: the base engin
 Generation 5 is architecturally identical to Generation 4 in terms of capabilities (TIER 1–6 complete), but the implementation is unified into a single file. Every component from every prior generation is present and active.
 
 **Key difference from Generation 4:**
+
 - Generation 4 required `betting_model_4_0.py` as a base import; Generation 5 has no such dependency
 - The full TIER 1–5 engine is embedded directly, making the file self-contained and deployable as a single artifact
 - `HybridBettingEngineV1` inherits from `UniversalBettingEngineV3` within the same module
@@ -162,6 +183,131 @@ Generation 5 is architecturally identical to Generation 4 in terms of capabiliti
 - A `--legacy` flag at runtime allows running the original Generation 3 behavior for regression comparison
 
 **Deployment target:** Docker-based prediction API, production inference endpoint.
+
+---
+
+## Generation 6 — `hybrid_betting_model_v3.py` (Internal: v6.x)
+
+**Concept:** Extend the intelligence stack with a full TIER 7 layer — real-time market intelligence, formal Bayesian uncertainty, venue/crowd modeling, case-based reasoning, cross-sport transfer, and a production-grade backtest engine.
+
+Generation 6 preserves TIER 1–6 unchanged and adds seven new modules forming TIER 7. Each module operates as an independent, composable layer that augments the prediction pipeline without replacing anything below.
+
+**TIER 7 — Advanced Intelligence Modules:**
+
+**7.1 — Real-Time Line Movement Tracker**
+
+- Captures time-stamped odds snapshots from multiple bookmakers per match
+- Computes `line_velocity`: rate of odds change in % per hour for 1, X, 2
+- Detects "sharp money" signals: sudden movements exceeding a configurable threshold within a short window (default 15 minutes)
+- `implied_drift`: normalized difference between opening and closing implied probabilities (overround-removed)
+- Outputs a scalar `line_movement_feature` [0, 1] injectable into MEBN as a live dimension
+
+**7.2 — Bayesian Online Learner**
+
+- Formal Beta-Binomial conjugate model per team: p_win ~ Beta(α, β)
+- Prior: weak (α₀=2, β₀=2), posterior updates with each observed outcome
+- Exponential decay parameter for forgetting older observations
+- Outputs: posterior mean, variance, 95% credible interval, effective sample size
+- `blend_with_model()`: mixes ML prediction with Bayesian posterior via configurable weight λ, with epistemic uncertainty as a separate signal
+
+**7.3 — Venue and Crowd Impact Model**
+
+- Crowd factor computed from stadium capacity and average attendance percentage
+- Derby and high-stakes multipliers applied to crowd pressure
+- Neutral venue detection: home advantage zeroed out automatically
+- Direct injection into `match_params[home_advantage]` as a pre-prediction modifier
+
+**7.4 — Propensity Score Matcher (Case-Based Reasoning)**
+
+- Maintains a historical match database with full feature vectors and settled outcomes
+- For each new prediction, retrieves top-K most similar historical matches using cosine similarity
+- Weighted empirical win rate from top-K serves as an independent prediction signal
+- Atypicality detector: if `mean_similarity < threshold`, the match is flagged as out-of-distribution
+- Confidence boost applied when the match falls within well-covered historical space
+
+**7.5 — Cross-Sport Transfer Learning**
+
+- Canonical dimension mapping across sports (team_power, fatigue, form, head2head)
+- Transfers feature importance weights from a source sport to initialize a target sport model
+- Particularly effective for low-data sports (<200 historical matches): cycling, snooker, darts
+- Overlap ratio computed between source and target dimension spaces
+
+**7.6 — Inference Cache**
+
+- MD5-keyed cache with configurable TTL (default 1 hour) and tolerance ε for near-identical inputs
+- LRU eviction at configurable max size (default 10,000 entries)
+- Hit/miss ratio tracking for performance monitoring
+- Cache invalidation by exact key or full flush
+
+**7.7 — Backtest Simulator (P&L Engine)**
+
+- Full staking strategy support: flat, Kelly, fractional Kelly
+- Metrics: hit rate, ROI, total profit, max drawdown, Sharpe ratio (annualized at √365), Brier score
+- Equity curve output for visualization
+- Configurable bet filters: odds range, custom filter function, BET/NO_BET action field
+
+**Continuity:** All TIER 1–6 components from Generations 1–5 are fully preserved and active.
+
+---
+
+## Generation 7 — `engine.py` (Internal: Atomic Hybrid v4.0)
+
+**Concept:** Unify all prior generations into a single atomic file and extend the architecture to TIER 12 — covering deep learning registries, market psychology, exotic sport models, and full production infrastructure.
+
+Generation 7 is the largest architectural step in the project's history. It merges `hybrid_betting_model_v3.py` (TIER 1–7, ~4,800 lines) with the full `atomic_hybrid` module suite (TIER 1–12, 330+ modules) into a single self-contained file of 21,700+ lines with zero internal imports.
+
+**New in Generation 7:**
+
+**TIER 1 — Expanded to 30-Model Ensemble (EnsembleLayerV3)**
+
+- Original 7 models (Blok A) fully preserved
+- Blok B: 14 additional sklearn regressors — ExtraTrees, HistGradientBoosting, AdaBoost, Bagging, VotingRegressor, 3-layer StackingRegressor, KNN, SVR, MLP, PoissonRegressor, QuantileRegressor, HuberRegressor, GaussianProcess, SGD
+- Blok C: TabNet (optional), DecisionTree baseline
+- Blok D: online/robust — TheilSen, RANSAC, PassiveAggressive, standalone IsotonicRegression
+- Three calibration variants: Isotonic (default), Platt, Beta calibration
+
+**TIER 2 — MetaLearnerManager (10 meta-learners)**
+
+- Dedicated manager for stacking layer with 10 configurable meta-learners
+- Initialized from OOF predictions of all 30 base models
+
+**TIER 3 — HPOManager (18+ methods)**
+
+- Expanded HPO and explainability suite beyond Optuna + SHAP
+
+**TIER 4 — DynamicFeaturesManager (23 features)**
+
+- Extended dynamic feature set: Elo, Glicko, TrueSkill, WHR, EloKTuner, recency, momentum, streak, fatigue, travel, rest, squad depth, pressure
+
+**TIER 5 — MarketsManager (19 specialized market models)**
+
+- Bivariate Poisson, Skellam, Weibull, Markov possession model, xG model, PSxG, shot quality, defensive, set piece, penalty, corner, card, foul, offside, substitution impact, first goal timing, second half boost, clean sheet, comeback
+
+**TIER 6 — Tier6HybridManager (31 modules)**
+
+- Full extension of the original 9 hybrid modules with 22 additional components under a unified manager
+
+**TIER 7 — Tier7AdvancedManager (33 modules)**
+
+- All 7 modules from Generation 6 integrated into a unified manager with 26 additional Kelly/staking/risk components
+
+**TIER 8–12 — Lazy-Instantiated Registries**
+
+Registered as class references, instantiated on demand via `get_tier_class(tier, name)`:
+
+- **TIER 8** — Professional tools: real odds fetchers, multi-bookmaker aggregator, arbitrage/surebet scanners, Betfair/Smarkets/Matchbook connectors, exchange order book, lay/back executors, steam/drift hunters, deep learning predictors (PyTorch MLP, Transformer, LSTM, GRU, Attention), notification stack (Telegram, Slack, Discord, Email, SMS, Webhook), audit logging and performance monitoring
+- **TIER 9** — Deep learning: GNN, GCN, GAT, GraphSAGE, TemporalGNN, VAE, conditional VAE, GAN, WGAN, Diffusion model, Mixture of Experts (Sparse, Dense, Soft MoE with load balancing and auxiliary losses), TCN, WaveNet, TransformerXL, Informer, Autoformer, Pyraformer, FEDformer, TimesNet
+- **TIER 10** — Market psychology: Twitter/Reddit/Forum/Telegram/Discord sentiment scrapers, BERTweet, RoBERTa, custom betting sentiment, emotion detector, public bet % tracker, sharp money detector, fade-the-public, contrarian bet detector, herding/recency/confirmation/overconfidence/loss aversion/anchoring/FOMO bias detectors, greed index
+- **TIER 11** — Exotic sport models: darts three-dart avg, snooker break builder, chess Elo, equestrian horse form, speedway heat model, badminton/table tennis/squash/handball/water polo specialists, F1 qualifying/pit stop/safety car/weather adaptation
+- **TIER 12** — Infrastructure: PostgreSQL, MongoDB, Redis, ClickHouse, TimescaleDB, S3, InfluxDB, Prometheus, Grafana, Kibana, RabbitMQ, Kafka, Redis PubSub, ZeroMQ, Celery, Dask, Ray, Apache Beam, Docker, Kubernetes, Helm, GitHub Actions, GitLab CI/CD, Jenkins, Terraform, Ansible
+
+**Architecture summary:**
+
+```
+TT approximation ×1000 × 30-model ensemble × TIER 2–12 ×10 = ×10,000
+```
+
+**Deployment target:** Single-file atomic artifact. All TIER 8–12 modules instantiated on demand — zero overhead at startup, full production stack available when needed.
 
 ---
 
@@ -173,27 +319,28 @@ Generation 5 is architecturally identical to Generation 4 in terms of capabiliti
 
 **OU35 market — the clearest signal:**
 
-| Year | N bets | Accuracy | ROI |
-|------|--------|----------|-----|
-| 2023 | 55 | 58.2% | +13.8% |
-| 2024 | 563 | 59.9% | +33.0% |
-| 2025 | 714 | 65.1% | +32.4% |
-| 2026 | 365 | 66.6% | +40.8% |
+| Year | N bets | Accuracy | ROI    |
+| ---- | ------ | -------- | ------ |
+| 2023 | 55     | 58.2%    | +13.8% |
+| 2024 | 563    | 59.9%    | +33.0% |
+| 2025 | 714    | 65.1%    | +32.4% |
+| 2026 | 365    | 66.6%    | +40.8% |
 
 The OU35 ROI trend is upward across every measured year, with Sharpe ratio of **12.87** — a statistically meaningful signal even on limited data.
 
 **Model vs. bookmaker accuracy — selective edge:**
 
-| Market | Model | Bookmaker | Edge |
-|--------|-------|-----------|------|
-| OU35 | 63.5% | 36.6% | **+26.8 pp** |
-| OU15 | 78.9% | 68.0% | **+10.9 pp** |
-| BTTS | 50.1% | 45.0% | **+5.2 pp** |
-| DC_12 | 73.4% | 73.1% | **+0.3 pp** |
+| Market | Model | Bookmaker | Edge         |
+| ------ | ----- | --------- | ------------ |
+| OU35   | 63.5% | 36.6%     | **+26.8 pp** |
+| OU15   | 78.9% | 68.0%     | **+10.9 pp** |
+| BTTS   | 50.1% | 45.0%     | **+5.2 pp**  |
+| DC\_12 | 73.4% | 73.1%     | **+0.3 pp**  |
 
 The 1X2 market is weaker at this data scale — expected, as 1X2 prediction requires the most historical context to stabilize. The model does not outperform bookmakers on 1X2 at 5,000 matches; at 50,000+ matches across 30+ leagues, that gap is the primary calibration target.
 
 **Validation:**
+
 - Walk-forward MAE stability: **0.3568 ± 0.0030** — STABLE
 - Overfitting gap (train vs. test MAE): **0.0005** — negligible
 - Calibration verdict: WELL CALIBRATED (within the available data distribution)
@@ -218,22 +365,31 @@ Generation 4  →  + 9 modular hybrid overlays (market calibration,
      ↓
 Generation 5  →  Unified self-contained engine (all tiers, single file,
                    production-ready Docker deployment target)
+     ↓
+Generation 6  →  + TIER 7: real-time line movement, Bayesian online learner,
+                   venue/crowd model, propensity matcher, cross-sport transfer,
+                   inference cache, P&L backtest simulator
+     ↓
+Generation 7  →  Atomic Hybrid v4.0 (21,700+ lines, single file, zero
+                   internal imports): 30-model ensemble, TIER 2–7 managers,
+                   TIER 8–12 lazy registries covering deep learning,
+                   market psychology, exotic sports, and full production
+                   infrastructure (Kafka, Kubernetes, Ray, Prometheus)
 ```
 
-**Sports coverage across all generations:** Football, basketball, hockey, tennis, volleyball, baseball, American football, rugby, boxing/MMA, snooker, darts, esports (CS2, LoL, Dota2, Valorant), motorsport, cricket, handball.
+**Sports coverage across all generations:** Football, basketball, hockey, tennis, volleyball, baseball, American football, rugby, boxing/MMA, snooker, darts, esports (CS2, LoL, Dota2, Valorant), motorsport, cricket, handball, and additional exotic sports covered by TIER 11 specialist models.
 
-**Betting markets across all generations:** 1X2, Double Chance (1X / X2 / 12), BTTS, Over/Under (1.5 / 2.5 / 3.5 / 4.5), Asian Handicap, Correct Score, and extensions.
+**Betting markets across all generations:** 1X2, Double Chance (1X / X2 / 12), BTTS, Over/Under (1.5 / 2.5 / 3.5 / 4.5), Asian Handicap, Correct Score, and 19 specialized market models in TIER 5 (bivariate Poisson, Skellam, xG, PSxG, shot quality, set piece, corner, card, clean sheet, comeback, and more).
 
 ---
 
 *BANEBET PRO is a proprietary system. This document describes the public architectural evolution. Internal mathematical frameworks, signal classification logic, decision constants, and calibration parameters are not disclosed.*
 
-
 ## Contact
 
 For commercial licensing, partnerships, or data collaboration:
 
-**Bartosz** — BANEBET.PRO ANALYST
-📧 projectbanebet.proanalyst@gmail.com 
-🐙 [github.com/Jokovexor](https://github.com/Jokovexor)
+Bartosz Radomski — BANEBET.PRO ANALYST
+📧 projectbanebet.proanalyst@gmail.com
+🐙 github.com/Jokovexor
 
