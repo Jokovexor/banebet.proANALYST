@@ -1,9 +1,8 @@
-# banebet.proANALYST
-Proprietary sports betting prediction engine — architecture evolution from v1.0 to Hybrid v2.0. BUSL-1.1 licensed.
+
 
 # banebet.proANALYST
 
-Proprietary sports betting prediction engine — architecture evolution from v1.0 to Atomic Hybrid v4.0. BUSL-1.1 licensed.
+Proprietary sports betting prediction engine — architecture evolution from v1.0 to Atomic Hybrid v7.0. BUSL-1.1 licensed.
 
 # BANEBET PRO — Architecture Evolution
 
