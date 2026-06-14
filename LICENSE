@@ -1,0 +1,88 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:             Bartosz Radomski [BANEBET PRO ANALYST]
+
+Licensed Work:        BANEBET PRO ANALYST — Hybrid Betting Engine
+                      The Licensed Work includes all of the following files
+                      and their respective model generations:
+
+                        betting_model.py              (Generation 1 — v1.x)
+                        betting_model_2_0.py          (Generation 2 — v2.0)
+                        betting_model_3_0.py          (Generation 3 — v3.0/v4.0)
+                        hybrid_betting_model_v1.py    (Generation 4 — v5.x modular)
+                        hybrid_betting_model_v2.py    (Generation 5 — v5.x unified)
+                        hybrid_betting_model_v3.py    (Generation 6 — v6.x)
+                        engine.py                     (Generation 7 — Atomic Hybrid v4.0)
+
+                      Copyright (C) 2024-2026 Bartosz Radomski [BANEBET PRO ANALYST]
+
+Additional Use Grant: You may use the Licensed Work for personal,
+                      educational, and non-commercial research purposes only.
+                      Any commercial use, including but not limited to
+                      offering the Licensed Work as a service, integrating
+                      it into a commercial product, or using it to generate
+                      revenue in any form, requires a separate commercial
+                      license obtained from the Licensor.
+
+Change Date:          2093-01-01
+
+Change License:       GNU General Public License v2.0 or later
+
+---
+
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, above, permitting limited
+production use.
+
+Effective on the Change Date, or the fourth anniversary of the first publicly
+available distribution of a specific version of the Licensed Work under this
+License, whichever comes first, the Licensor hereby grants you rights under
+the terms of the Change License, and these terms do not apply to that version
+of the Licensed Work.
+
+License Notice
+
+Each time you distribute, reproduce, or make the Licensed Work available, you
+must include a copy of this License and display prominently the following
+notice:
+
+    This software is licensed under the Business Source License 1.1.
+    Commercial use is prohibited without a license from the Licensor.
+    See LICENSE for details.
+
+Covenants of Licensor
+
+In consideration of the right to use this License's text and the "Business
+Source License" name and trademark, Licensor covenants to MariaDB, and to
+all other recipients of the licensed work to be provided by Licensor:
+
+1. To specify as the Change License the GPL Version 2.0 or any later version,
+   or a license that is compatible with GPL Version 2.0 or a later version,
+   where "compatible" means that software provided under the Change License
+   can be included in a program with software provided under GPL Version 2.0
+   or a later version. Licensor may specify additional Change Licenses without
+   limitation.
+
+2. To either: (a) specify an additional grant of rights to use that does not
+   impose any additional restriction on the right granted in this License, as
+   the Additional Use Grant; or (b) insert the text "None".
+
+3. To specify a Change Date.
+
+4. Not to modify this License in any other way.
+
+Notice
+
+The Business Source License (this document, or the "License") is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in this License.
+
+For more information on the use of the Business Source License, please visit:
+https://mariadb.com/bsl11/
+
+"Business Source License" is a trademark of MariaDB Corporation Ab.
